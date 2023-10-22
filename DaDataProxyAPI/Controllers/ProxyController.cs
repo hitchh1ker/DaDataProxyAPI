@@ -1,71 +1,56 @@
 ﻿using DaDataProxyAPI.Models.Address;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using DaDataProxyAPI.Settings;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
 namespace DaDataProxyAPI.Controllers
 {
-    [ApiController]
-    [Route("/proxy")]
     public class ProxyController : Controller
     {
-        private readonly IConfiguration _configuration;
-        private readonly HttpClient _httpClient;
+        private readonly string apiKey;
+        private readonly string apiUrl;
+        private readonly string proxyKey;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public ProxyController(IConfiguration configuration, HttpClient httpClient)
+        public ProxyController(IOptions<ProxySettings> options, IHttpClientFactory httpFactory)
         {
-            _configuration = configuration;
-            _httpClient = httpClient;
+            apiKey = options.Value.ApiKey;
+            apiUrl = options.Value.ApiUrl;
+            proxyKey = options.Value.ProxyKey;
+            _httpClientFactory = httpFactory;
         }
 
-        [HttpGet]
-        [Route("/getaddress")]
-        public async Task<IActionResult> GetAddressSuggestions(string address)
+        [HttpGet("/getaddress")]
+        public async Task<IActionResult> GetAddressSuggestionsAsync(string address)
         {
-            try
+            string authorizationHeader = Request.Headers["Authorization"];
+
+            var httpFactory = _httpClientFactory.CreateClient();
+
+            if (authorizationHeader == proxyKey)
             {
-                string apiUrl = $"https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address?query={address}";
+                httpFactory.DefaultRequestHeaders.Add("Authorization", $"Token {apiKey}");
 
-                string proxyKey = _configuration.GetSection("ProxyKey:ProxyKey").Value;
-                string proxyHeader = Request.Headers["Proxy-Authorization"];
+                string urlRequest = $"{apiUrl}={address}";
 
-                string apiKey = _configuration.GetSection("DaDataConfig:ApiKey").Value;
-                string authorizationHeader = Request.Headers["Authorization"];
+                using var response = await httpFactory.GetAsync(urlRequest);
 
-                _httpClient.DefaultRequestHeaders.Clear();
-                _httpClient.DefaultRequestHeaders.Add("Authorization", $"Token {authorizationHeader}");
+                string responseBody = await response.Content.ReadAsStringAsync();
 
-                if (proxyHeader == proxyKey)
-                {
-                    if (authorizationHeader == apiKey)
-                    {
-                        HttpResponseMessage response = await _httpClient.GetAsync(apiUrl);
+                var suggestions = JsonConvert.DeserializeObject<AddressSuggestionsResponse>(responseBody);
 
-                        string responseBody = await response.Content.ReadAsStringAsync();
+                List<string> addressValues = suggestions.Suggestions.Select(x => x.Value).ToList();
 
-                        var suggestions = JsonConvert.DeserializeObject<AddressSuggestionsRequest>(responseBody);
-
-                        List<string> addressValues = suggestions.Suggestions.Select(s => s.Value).ToList();
-
-                        return Ok(addressValues);
-                    }
-                    else if (string.IsNullOrEmpty(authorizationHeader))
-                    {
-                        return Forbid();
-                    }
-                    else
-                    {
-                        return Unauthorized();
-                    }
-                }
-                else
-                {
-                    return Unauthorized();
-                }
+                return Ok(addressValues);
             }
-            catch (Exception ex)
+            else if (string.IsNullOrWhiteSpace(authorizationHeader))
             {
-                return StatusCode(500, $"An error occurred: {ex.Message}");
+                return Forbid();
+            }
+            else
+            {
+                return Unauthorized();
             }
         }
     }

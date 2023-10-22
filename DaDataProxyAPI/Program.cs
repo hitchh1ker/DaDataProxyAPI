@@ -1,11 +1,8 @@
+using DaDataProxyAPI.Settings;
+
 var builder = WebApplication.CreateBuilder(args);
 
-var configuration = new ConfigurationBuilder()
-    .SetBasePath(builder.Environment.ContentRootPath)
-    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-    .Build();
-
-builder.Services.AddSingleton<IConfiguration>(configuration);
+builder.Services.Configure<ProxySettings>(builder.Configuration.GetSection("DaDataConfig"));
 
 builder.Services.AddHttpClient();
 
