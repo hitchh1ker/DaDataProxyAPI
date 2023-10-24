@@ -8,16 +8,12 @@ namespace DaDataProxyAPI.Controllers
 {
     public class ProxyController : Controller
     {
-        private readonly string apiKey;
-        private readonly string apiUrl;
-        private readonly string proxyKey;
+        private readonly IOptions<ProxySettings> _options;
         private readonly IHttpClientFactory _httpClientFactory;
 
         public ProxyController(IOptions<ProxySettings> options, IHttpClientFactory httpFactory)
         {
-            apiKey = options.Value.ApiKey;
-            apiUrl = options.Value.ApiUrl;
-            proxyKey = options.Value.ProxyKey;
+            _options = options;
             _httpClientFactory = httpFactory;
         }
 
@@ -26,20 +22,17 @@ namespace DaDataProxyAPI.Controllers
         {
             string authorizationHeader = Request.Headers["Authorization"];
 
-            var httpFactory = _httpClientFactory.CreateClient();
+            using var httpFactory = _httpClientFactory.CreateClient();
 
-            if (authorizationHeader == proxyKey)
+            if (authorizationHeader == _options.Value.ProxyKey)
             {
-                httpFactory.DefaultRequestHeaders.Add("Authorization", $"Token {apiKey}");
-
-                string urlRequest = $"{apiUrl}={address}";
+                httpFactory.DefaultRequestHeaders.Add("Authorization", $"Token {_options.Value.ApiKey}");
+                string urlRequest = $"{_options.Value.ApiUrl}?query={address}";
 
                 using var response = await httpFactory.GetAsync(urlRequest);
 
                 string responseBody = await response.Content.ReadAsStringAsync();
-
                 var suggestions = JsonConvert.DeserializeObject<AddressSuggestionsResponse>(responseBody);
-
                 List<string> addressValues = suggestions.Suggestions.Select(x => x.Value).ToList();
 
                 return Ok(addressValues);
